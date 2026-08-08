@@ -28,5 +28,4 @@ AS4809：中国电信 （CN2 GT/GIA 59.43和202.97的核心段）。
 输入格式：支持标准 IP 列表文本。
 权限要求：Windows 版本建议右键“以管理员身份运行”，以确保 ICMP/TCP 追踪的准确性。
 
-🔗 官方项目
-原项目地址：https://github.com/nxtrace/NTrace-core
+🔗 NTrace-core官方原项目地址：https://github.com/nxtrace/NTrace-core
