@@ -29,3 +29,6 @@ AS4809：中国电信 （CN2 GT/GIA 59.43和202.97的核心段）。
 权限要求：Windows 版本建议右键“以管理员身份运行”，以确保 ICMP/TCP 追踪的准确性。
 
 🔗 NTrace-core官方原项目地址：https://github.com/nxtrace/NTrace-core
+
+<img width="899" height="790" alt="nexttraceV3" src="https://github.com/user-attachments/assets/a9e51a1a-9027-4525-ad18-b0f159ad3fe9" />
+
