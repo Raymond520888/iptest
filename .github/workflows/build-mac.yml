@@ -2,7 +2,7 @@ name: Build Mac App (Universal2)
 
 on:
   push:
-    branches: [ main ]   # 如果您的默认分支是 master，请改为 master
+    branches: [ main ] 
   workflow_dispatch:
 
 jobs:
@@ -33,9 +33,9 @@ jobs:
             --hidden-import chardet \
             --hidden-import idna \
             --hidden-import certifi \
-            nexttrace_mac.py
+            nexttraceV3-Mac.py
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NextTrace-Mac-App
+          name: nexttraceV3-Mac
           path: dist/nexttrace_mac.app
