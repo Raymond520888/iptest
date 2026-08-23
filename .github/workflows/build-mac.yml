@@ -3,11 +3,11 @@ name: Build Mac App (Universal2)
 on:
   push:
     branches: [ main, master ]   # 根据您的默认分支调整
-  workflow_dispatch:             # 保留手动触发
+  workflow_dispatch:
 
 jobs:
   build-mac-app:
-    runs-on: macos-13            # 使用 Intel 运行器（更稳定）
+    runs-on: macos-13
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -15,7 +15,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # 改用 3.11
+          python-version: '3.11'
           architecture: 'x64'
 
       - name: Install dependencies
@@ -37,10 +37,10 @@ jobs:
             --hidden-import chardet \
             --hidden-import idna \
             --hidden-import certifi \
-            nexttrace_mac.py
+            nexttraceV3-Mac.py   # 文件名已改为您的新名称
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: NextTrace-Mac-App
-          path: dist/nexttrace_mac.app
+          path: dist/nexttraceV3-Mac.app
