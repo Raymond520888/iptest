@@ -1,0 +1,41 @@
+name: Build Mac App (Universal2)
+
+on:
+  push:
+    branches: [ main ]   # 如果您的默认分支是 master，请改为 master
+  workflow_dispatch:
+
+jobs:
+  build-mac-app:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          architecture: 'x64'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pyinstaller
+      - name: Download nexttrace universal binary
+        run: |
+          curl -L https://github.com/nxtrace/NTrace-core/releases/latest/download/nexttrace_darwin_universal -o nexttrace
+          chmod +x nexttrace
+      - name: Build .app with PyInstaller (Universal2)
+        run: |
+          pyinstaller --target-arch universal2 -F -w \
+            --add-data "nexttrace:." \
+            --hidden-import requests \
+            --hidden-import urllib3 \
+            --hidden-import chardet \
+            --hidden-import idna \
+            --hidden-import certifi \
+            nexttrace_mac.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextTrace-Mac-App
+          path: dist/nexttrace_mac.app
