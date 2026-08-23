@@ -2,7 +2,7 @@ name: Build Mac App (Universal2)
 
 on:
   push:
-    branches: [ main, master ]   # 根据您的默认分支调整
+    branches: [ main ]   
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
             --hidden-import chardet \
             --hidden-import idna \
             --hidden-import certifi \
-            nexttraceV3-Mac.py   # 文件名已改为您的新名称
+            nexttraceV3-Mac.py   
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
