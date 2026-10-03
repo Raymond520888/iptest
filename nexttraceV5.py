@@ -16,7 +16,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk, simpledialog
 from tkinter.scrolledtext import ScrolledText
 
-# ========== 确定基础目录 ==========
+# ========== 確定基礎目錄 ==========
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
@@ -33,12 +33,13 @@ def resource_path(relative_path):
 PREFIX_DB_V4_PATH = os.path.join(BASE_DIR, "asn_prefixes_v4.json")
 PREFIX_DB_V6_PATH = os.path.join(BASE_DIR, "asn_prefixes_v6.json")
 RIPESTAT_URL = "https://stat.ripe.net/data/announced-prefixes/data.json"
-TARGET_ASNS = ["AS4809", "AS4812", "AS9929", "AS58807", "AS58453", "AS4134"]
 
-# 已知关键网段硬编码补充表（防止 RIPEstat 数据缺失）
+# 【NTrace 原理重构】：去掉了 AS4134 (163骨干网)，保留 AS4809 (CN2 核心骨干) 与精品网相关 ASN[cite: 1]
+TARGET_ASNS = ["AS4809", "AS4812", "AS9929", "AS58807", "AS58453"]
+
+# 硬编码关键网段特征表（补充 RIPEstat 数据缺失）
 KNOWN_IP_RANGES = {
-    "AS4809": ["59.43.0.0/16"],        # 电信 CN2 骨干
-    "AS4134": ["202.97.0.0/16"],       # 电信 163 骨干
+    "AS4809": ["59.43.0.0/16"],         # 电信 CN2 核心骨干网段（NTrace-core 检测 CN2 的关键标识）[cite: 1]
     "AS4837": ["219.158.0.0/16"],      # 联通 169 骨干
     "AS9808": ["221.183.0.0/16"],      # 移动骨干
     "AS9929": ["218.105.0.0/16"],      # 联通 CUII 部分网段
@@ -51,10 +52,9 @@ DEFAULT_THREADS = 128
 MAX_CONCURRENT = 128
 CSV_HEADERS = ["IP/域名", "端口", "归属运营商", "线路类型", "命中ASN", "延迟(ms)"]
 
+# 线路判定规则：无 AS4134，只要出现 AS4809 或 AS4812 即判定为 CN2 线路[cite: 1]
 ROUTE_RULES = [
-    ("中国电信", "CN2 GIA/GT", ["AS4809"]),
-    ("中国电信", "CN2", ["AS4812"]),
-    ("中国电信", "163 骨干网", ["AS4134"]),
+    ("中国电信", "CN2 GIA/GT", ["AS4809", "AS4812"]),
     ("中国联通", "CUII（A网）", ["AS9929"]),
     ("中国移动", "CMIN2", ["AS58807"]),
     ("中国移动", "CMI", ["AS58453"]),
@@ -133,6 +133,9 @@ class ASNMatcher:
         }
 
     def match(self, ip_str):
+        # 【NTrace-core 核心匹配法】：遇到 59.43.* 网段直接高优先级认定为 AS4809 (CN2)[cite: 1]
+        if ip_str.startswith("59.43."):
+            return "AS4809"
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
@@ -250,7 +253,7 @@ def measure_ping_delay(ip, timeout_sec=3):
 class NextTraceGUI:
     def __init__(self, root):
         self.root = root
-        root.title("NextTrace 批量线路测试工具 v2.0") # 修改1：去掉标题栏的 by Dehya&Raymond
+        root.title("NextTrace 批量线路测试工具 v2.0")
         root.geometry("900x760")
         root.resizable(True, True)
 
@@ -365,7 +368,6 @@ class NextTraceGUI:
         self.main_frame = tk.Frame(self.root, padx=10, pady=10)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # ===== 顶部：去掉左侧 v2.0，只保留右侧作者 =====
         self.author_label = tk.Label(self.main_frame, text="by Dehya&Raymond",
                                      font=("Arial", 9, "italic"), anchor='e')
         self.author_label.grid(row=0, column=0, columnspan=6, sticky='e', pady=(0, 5))
@@ -439,7 +441,6 @@ class NextTraceGUI:
         self.root.configure(bg=colors['bg'])
         self.main_frame.configure(bg=colors['bg'])
         self.control_frame.configure(bg=colors['bg'])
-        # 顶部标签（删除 version_label，只保留 author_label）
         self.author_label.configure(bg=colors['bg'], fg=colors['fg'])
         for widget in [self.lbl_hint, self.status_label]:
             widget.configure(bg=colors['bg'], fg=colors['fg'])
@@ -650,6 +651,7 @@ class NextTraceGUI:
 
         self.root.after(0, self.finish_test)
 
+    # 【NTrace-core 跟踪与解析重构】
     def test_one(self, ip, port, country, idx):
         if self.stop_flag:
             return None
@@ -663,6 +665,7 @@ class NextTraceGUI:
             delay_str = "未开启测试"
 
         try:
+            # 禁用内部 GeoIP 并以原始模式实时获取全路径 IP[cite: 1]
             cmd = [self.exe_path, "--raw", "-d", "disable-geoip", "-n", "-C",
                    "-q", "1", "-m", str(MAX_HOPS), ip]
             creation_flags = 0
@@ -683,7 +686,6 @@ class NextTraceGUI:
 
             hit_asns = []
             hit_seen = set()
-            interrupted = False
             timed_out = False
 
             def timeout_killer():
@@ -694,6 +696,7 @@ class NextTraceGUI:
             timer.start()
 
             try:
+                # 遍历完整的路由节点，确保捕捉到中后段出现的 59.43.x.x 节点[cite: 1]
                 for line in proc.stdout:
                     parts = line.strip().split("|")
                     if len(parts) < 2 or not parts[0].isdigit():
@@ -701,13 +704,13 @@ class NextTraceGUI:
                     hop_ip = parts[1]
                     if hop_ip == "*" or not hop_ip:
                         continue
+
+                    # 进行 IP -> ASN 的多级匹配逻辑[cite: 1]
                     asn = self.matcher.match(hop_ip)
                     if asn and asn not in hit_seen:
                         hit_seen.add(asn)
                         hit_asns.append(asn)
-                        interrupted = True
-                        proc.kill()
-                        break
+                        # 保持与 NTrace-core 流程同步：不提前强制终止进程，完整扫描链路[cite: 1]
             finally:
                 timer.cancel()
                 try:
@@ -722,7 +725,7 @@ class NextTraceGUI:
                     if proc in self.running_processes:
                         self.running_processes.remove(proc)
 
-            if timed_out and not interrupted:
+            if timed_out and not hit_asns:
                 raise subprocess.TimeoutExpired(cmd, TRACE_TIMEOUT)
 
             isp, line_type, asn_str = analyze_route(hit_asns)
