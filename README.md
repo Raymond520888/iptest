@@ -34,7 +34,5 @@ CIDR 转 IP工具   https://asn2ip.xdu.qzz.io
 
 https://github.com/nxtrace/NTrace-core
 
-https://github.com/wlisboy/wlisboy/blob/main/Trace
-
 <img width="899" height="790" alt="nexttraceV3" src="https://github.com/user-attachments/assets/a9e51a1a-9027-4525-ad18-b0f159ad3fe9" />
 
