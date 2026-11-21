@@ -5,6 +5,10 @@ ip-batch-track-*
 *.exe
 *.test
 *.out
+dist/
+coverage.out
+*.prof
+vendor/
 
 # ===== 运行时生成的文件 =====
 # 运行代码时自动从 RIPEstat 拉取的前缀表（数据每天都在变，不需要提交）
