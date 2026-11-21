@@ -1,19 +1,29 @@
-# Go 编译产物
-ip-Batch-Track-*
+# ===== Go 编译产物 =====
+# 忽略当前项目生成的可执行文件（Mac/Linux无后缀，Windows有.exe）
+ip-batch-track
+ip-batch-track-*
 *.exe
 *.test
 *.out
 
-# 运行时数据
+# ===== 运行时生成的文件 =====
+# 运行代码时自动从 RIPEstat 拉取的前缀表（数据每天都在变，不需要提交）
 asn_prefixes_v4.json
 asn_prefixes_v6.json
+
+# 测试完成后自动生成的报告结果
 result_*.txt
 
-# Python legacy 缓存
+# ===== 系统与编辑器缓存 =====
+# macOS 系统文件
+.DS_Store
+# Windows 系统文件
+Thumbs.db
+# IDE 配置文件（如果你用 VSCode 或 Goland 可以加上）
+.idea/
+.vscode/
+
+# ===== 历史遗留的 Python 缓存（为了防万一） =====
 __pycache__/
 *.pyc
 .venv/
-
-# 系统
-.DS_Store
-Thumbs.db
