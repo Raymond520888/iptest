@@ -31,15 +31,15 @@ jobs:
           cache: true
 
       - name: Install MinGW-w64 for CGO
-        shell: bash
+        shell: pwsh
         run: |
-          pacman -S --noconfirm --needed mingw-w64-x86_64-gcc
+          choco install -y mingw --no-progress
 
       - name: Build Windows amd64 GUI EXE
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
-          PATH: /mingw64/bin:$PATH
+          PATH: /c/ProgramData/mingw64/mingw64/bin:/mingw64/bin:$PATH
           CC: x86_64-w64-mingw32-gcc
           CGO_ENABLED: "1"
           GOOS: windows
