@@ -2,8 +2,10 @@ package tracer
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"time"
 
 	"github.com/nxtrace/NTrace-core/ipgeo"
@@ -16,16 +18,55 @@ type Tracer struct {
 }
 
 func NewTracer(timeout time.Duration, maxHops int) *Tracer {
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	if maxHops <= 0 {
+		maxHops = 30
+	}
 	return &Tracer{timeout: timeout, maxHops: maxHops}
+}
+
+func parseDstPort(portStr string) int {
+	if portStr == "" {
+		return 443
+	}
+	p, err := strconv.Atoi(portStr)
+	if err != nil || p < 1 || p > 65535 {
+		return 443
+	}
+	return p
 }
 
 // Trace 执行 TCP traceroute，返回有效的跳地址列表。
 // 无效跳（Success=false 或 Address=nil）会被显式过滤。
-func (t *Tracer) Trace(ctx context.Context, targetIP string) ([]netip.Addr, error) {
+func (t *Tracer) Trace(ctx context.Context, targetIP, port string) ([]netip.Addr, error) {
+	if targetIP == "" {
+		return nil, fmt.Errorf("目标地址为空")
+	}
+
 	ip := net.ParseIP(targetIP)
 	if ip == nil {
-		return nil, nil
+		// 支持域名目标：先解析为 IP 地址
+		lookupCtx, cancel := context.WithTimeout(ctx, t.timeout)
+		defer cancel()
+
+		ips, err := net.DefaultResolver.LookupIP(lookupCtx, "ip", targetIP)
+		if err != nil {
+			return nil, fmt.Errorf("域名解析失败 (%s): %w", targetIP, err)
+		}
+		for _, candidate := range ips {
+			if candidate != nil {
+				ip = candidate
+				break
+			}
+		}
+		if ip == nil {
+			return nil, fmt.Errorf("域名未返回有效 IP (%s)", targetIP)
+		}
 	}
+
+	dstPort := parseDstPort(port)
 
 	res, err := trace.Traceroute(trace.TCPTrace, trace.Config{
 		Context:          ctx,
@@ -34,16 +75,19 @@ func (t *Tracer) Trace(ctx context.Context, targetIP string) ([]netip.Addr, erro
 		NumMeasurements:  1,
 		MaxAttempts:      2,
 		ParallelRequests: 6,
-		Timeout:          2 * time.Second,
+		Timeout:          t.timeout,
 		PacketInterval:   50,
 		TTLInterval:      50,
 		DstIP:            ip,
-		DstPort:          443,
+		DstPort:          dstPort,
 		IPGeoSource:      ipgeo.GetSource("DISABLE-GEOIP"),
 		Lang:             "en",
 	})
-	if err != nil && res == nil {
-		return nil, err
+	if res == nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("traceroute 未返回有效结果")
 	}
 
 	hops := make([]netip.Addr, 0, len(res.Hops))
@@ -52,8 +96,27 @@ func (t *Tracer) Trace(ctx context.Context, targetIP string) ([]netip.Addr, erro
 			if !attempt.Success || attempt.Address == nil {
 				continue
 			}
-			addr, ok := netip.AddrFromSlice(attempt.Address.(*net.IPAddr).IP)
-			if !ok {
+
+			var rawIP net.IP
+			switch addrVal := attempt.Address.(type) {
+			case *net.IPAddr:
+				rawIP = addrVal.IP
+			case *net.IPNet:
+				rawIP = addrVal.IP
+			case *net.TCPAddr:
+				rawIP = addrVal.IP
+			case *net.UDPAddr:
+				rawIP = addrVal.IP
+			default:
+				if parsed, parseErr := netip.ParseAddr(attempt.Address.String()); parseErr == nil && parsed.IsValid() {
+					hops = append(hops, parsed.Unmap())
+					break
+				}
+				continue
+			}
+
+			addr, ok := netip.AddrFromSlice(rawIP)
+			if !ok || !addr.IsValid() {
 				continue
 			}
 			hops = append(hops, addr.Unmap())
