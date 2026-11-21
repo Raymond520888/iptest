@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"ip-batch-track/internal/config"
 	"ip-batch-track/internal/filter"
@@ -28,14 +29,21 @@ func main() {
 		conc        = flag.Int("c", 128, "并发数")
 		timeout     = flag.Duration("timeout", 120*time.Second, "单次追踪超时")
 		maxHops     = flag.Int("m", 30, "最大跳数")
-		enablePing  = flag.Bool("ping", false, "启用延迟测试")
-		forceUpdate = flag.Bool("update", false, "强制从 RIPEstat 更新前缀表数据") // 新增这一行
+		enablePing  = flag.Bool("ping", false, "启用延迟测试（当前为占位功能）")
+		forceUpdate = flag.Bool("update", false, "强制从 RIPEstat 更新前缀表数据")
 	)
 
 	fmt.Printf("IP Batch Track %s (commit: %s)\n", version, commit)
 	flag.Parse()
 
-	// 修改前缀表检测逻辑：支持 -update 强制更新，或文件不存在时自动更新
+	cfg := config.Config{
+		InputFile:   *inputFile,
+		Concurrency: *conc,
+		Timeout:     *timeout,
+		MaxHops:     *maxHops,
+		EnablePing:  *enablePing,
+	}
+
 	if *forceUpdate {
 		fmt.Println("[+] 强制更新模式：正在从 RIPEstat 拉取最新前缀表...")
 		if err := filter.UpdatePrefixDB(); err != nil {
@@ -58,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	file, err := os.Open(*inputFile)
+	file, err := os.Open(cfg.InputFile)
 	if err != nil {
 		fmt.Printf("[-] 无法打开文件: %v\n", err)
 		os.Exit(1)
@@ -73,22 +81,70 @@ func main() {
 			targets = append(targets, worker.Target{IP: ip, Port: port, Country: country})
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("[-] 读取目标文件出错: %v\n", err)
+		os.Exit(1)
+	}
 
 	if len(targets) == 0 {
 		fmt.Println("[-] 未找到有效的目标")
 		return
 	}
-	fmt.Printf("[+] 加载 %d 个目标，并发数 %d\n", len(targets), *conc)
+	fmt.Printf("[+] 加载 %d 个目标，并发数 %d\n", len(targets), cfg.Concurrency)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	tr := tracer.NewTracer(*timeout, *maxHops)
+	tr := tracer.NewTracer(cfg.Timeout, cfg.MaxHops)
 	start := time.Now()
-	results := worker.Run(ctx, targets, tr, matcher, *conc, *enablePing)
+	results := worker.Run(ctx, targets, tr, matcher, cfg.Concurrency, cfg.EnablePing)
 	fmt.Printf("[+] 测试完成，耗时: %v\n", time.Since(start).Round(time.Second))
 
 	saveResults(results)
+}
+
+func isWideRune(r rune) bool {
+	if r < 0x1100 {
+		return false
+	}
+	return (r >= 0x1100 && r <= 0x115F) ||
+		(r >= 0x2E80 && r <= 0xA4CF) ||
+		(r >= 0xAC00 && r <= 0xD7A3) ||
+		(r >= 0xF900 && r <= 0xFAFF) ||
+		(r >= 0xFE10 && r <= 0xFE1F) ||
+		(r >= 0xFE30 && r <= 0xFE6F) ||
+		(r >= 0xFF00 && r <= 0xFF60) ||
+		(r >= 0xFFE0 && r <= 0xFFE6) ||
+		(r >= 0x1F300 && r <= 0x1FAFF) ||
+		(r >= 0x20000 && r <= 0x3FFFD)
+}
+
+func displayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+			continue
+		}
+		if isWideRune(r) {
+			width += 2
+		} else {
+			width += 1
+		}
+	}
+	return width
+}
+
+func padCell(s string, targetWidth int, rightAlign bool) string {
+	w := displayWidth(s)
+	pad := targetWidth - w
+	if pad < 0 {
+		pad = 0
+	}
+	spaces := strings.Repeat(" ", pad)
+	if rightAlign {
+		return " " + spaces + s + " "
+	}
+	return " " + s + spaces + " "
 }
 
 func saveResults(results []worker.Result) {
@@ -104,21 +160,20 @@ func saveResults(results []worker.Result) {
 		if r.Country != "" {
 			ipDisplay += "#" + r.Country
 		}
-		delay := r.Delay
 		if r.Err != nil {
-			ipDisplay = r.IP + " (异常)"
+			ipDisplay += " (异常)"
 		}
-		rows = append(rows, []string{ipDisplay, r.Port, r.ISP, r.LineType, r.ASNStr, delay})
+		rows = append(rows, []string{ipDisplay, r.Port, r.ISP, r.LineType, r.ASNStr, r.Delay})
 	}
 
 	colWidths := make([]int, len(headers))
 	for i, h := range headers {
-		colWidths[i] = len(h)
+		colWidths[i] = displayWidth(h)
 	}
 	for _, r := range rows {
 		for i, cell := range r {
-			if len(cell) > colWidths[i] {
-				colWidths[i] = len(cell)
+			if w := displayWidth(cell); w > colWidths[i] {
+				colWidths[i] = w
 			}
 		}
 	}
@@ -133,17 +188,12 @@ func saveResults(results []worker.Result) {
 		return sb.String()
 	}
 
-	formatRow := func(row []string, alignRight bool) string {
+	formatRow := func(row []string, alignDataRight bool) string {
 		var sb strings.Builder
 		sb.WriteString("|")
 		for i, cell := range row {
-			var padded string
-			if alignRight && (i == 1 || i == 5) {
-				padded = fmt.Sprintf(" %*s ", colWidths[i], cell)
-			} else {
-				padded = fmt.Sprintf(" %-*s ", colWidths[i], cell)
-			}
-			sb.WriteString(padded)
+			right := alignDataRight && (i == 1 || i == 5)
+			sb.WriteString(padCell(cell, colWidths[i], right))
 			sb.WriteString("|")
 		}
 		return sb.String()
@@ -157,7 +207,8 @@ func saveResults(results []worker.Result) {
 		return
 	}
 	defer f.Close()
-	f.WriteString("\xEF\xBB\xBF")
+
+	_, _ = f.WriteString("\xEF\xBB\xBF")
 
 	sepLine := makeSeparator("-")
 	sepEqual := makeSeparator("=")
@@ -169,7 +220,7 @@ func saveResults(results []worker.Result) {
 	lines = append(lines, sepLine)
 
 	outputStr := strings.Join(lines, "\n") + "\n"
-	f.WriteString(outputStr)
+	_, _ = f.WriteString(outputStr)
 	fmt.Print(outputStr)
 	fmt.Printf("\n[+] 已保存结果至: %s\n", filename)
 }
