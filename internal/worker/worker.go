@@ -70,7 +70,7 @@ func Run(
 					continue
 				}
 
-				// 对齐 nexttraceV5.py：命中目标 ASN 即停止继续比对后续跳点
+				// 收集路径上命中的 ASN；若命中 CMIN2 (AS58807) 可提前结束
 				var hitASNs []string
 				seen := make(map[string]bool)
 				for _, hopAddr := range hops {
@@ -78,7 +78,9 @@ func Run(
 					if asn != "" && !seen[asn] {
 						seen[asn] = true
 						hitASNs = append(hitASNs, asn)
-						break
+						if asn == "AS58807" {
+							break
+						}
 					}
 				}
 
