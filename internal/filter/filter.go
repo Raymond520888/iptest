@@ -195,7 +195,7 @@ func (m *ASNMatcher) Match(addr netip.Addr) string {
 // ---------- 线路分析 ----------
 
 func AnalyzeRoute(hitASNs []string) (string, string, string) {
-	asnSet := make(map[string]bool)
+	asnSet := make(map[string]bool, len(hitASNs))
 	for _, a := range hitASNs {
 		asnSet[a] = true
 	}
@@ -205,42 +205,35 @@ func AnalyzeRoute(hitASNs []string) (string, string, string) {
 		asnStr = "无"
 	}
 
-	// 1. 优先判断电信优化线路
-	if asnSet["AS4809"] {
-		if asnSet["AS4134"] {
-			return "中国电信", "CN2 GT（半程优化）", asnStr
-		}
-		return "中国电信", "CN2 GIA（全程优化）", asnStr
-	}
-
-	if asnSet["AS23764"] {
-		return "中国电信", "CTGNet（国际精品）", asnStr
-	}
-
-	// 2. 遍历基础规则判断联通 / 移动 / 其他电信规则
-	var isps, types []string
-	seenISP, seenType := map[string]bool{}, map[string]bool{}
+	var isps []string
+	var lineTypes []string
+	seenISP := make(map[string]bool)
+	seenType := make(map[string]bool)
 
 	for _, rule := range config.RouteRules {
-		for _, target := range rule.ASNs {
-			if asnSet[target] {
-				if !seenISP[rule.ISP] {
-					isps = append(isps, rule.ISP)
-					seenISP[rule.ISP] = true
-				}
-				if !seenType[rule.LineType] {
-					types = append(types, rule.LineType)
-					seenType[rule.LineType] = true
-				}
+		matched := false
+		for _, kw := range rule.ASNs {
+			if asnSet[kw] {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			if !seenISP[rule.ISP] {
+				seenISP[rule.ISP] = true
+				isps = append(isps, rule.ISP)
+			}
+			if !seenType[rule.LineType] {
+				seenType[rule.LineType] = true
+				lineTypes = append(lineTypes, rule.LineType)
 			}
 		}
 	}
 
 	if len(isps) > 0 {
-		return strings.Join(isps, "/"), strings.Join(types, " / "), asnStr
+		return strings.Join(isps, "/"), strings.Join(lineTypes, " / "), asnStr
 	}
 
-	// 3. 未命中任何精品线路
 	return "非精品线路", "普通线路/骨干网", asnStr
 }
 
