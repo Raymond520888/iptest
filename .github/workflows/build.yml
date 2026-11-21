@@ -3,13 +3,8 @@ name: Build Windows GUI
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: '版本號（V3.0）'
-        required: false
-        default: ''
-        type: string
       publish_release:
-        description:
+        description: '版本号（V3.0）'
         required: true
         default: false
         type: boolean
@@ -38,21 +33,36 @@ jobs:
       - name: Sync Go modules and build Windows amd64 GUI EXE
         shell: bash
         env:
-          VERSION: ${{ inputs.version }}
           CC: x86_64-w64-mingw32-gcc
           CGO_ENABLED: "1"
           GOOS: windows
           GOARCH: amd64
         run: |
           set -e
-          GCC_BIN=$(find /c -name "x86_64-w64-mingw32-gcc.exe" 2>/dev/null | head -n 1 | xargs -r dirname)
-          if [ -z "$GCC_BIN" ]; then
+          GCC_EXE=""
+          for candidate in \
+            "/mingw64/bin/x86_64-w64-mingw32-gcc.exe" \
+            "/c/mingw64/bin/x86_64-w64-mingw32-gcc.exe" \
+            "/c/ProgramData/mingw64/mingw64/bin/x86_64-w64-mingw32-gcc.exe" \
+            "/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin/x86_64-w64-mingw32-gcc.exe"; do
+            if [ -f "$candidate" ]; then
+              GCC_EXE="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$GCC_EXE" ]; then
+            GCC_EXE=$(find /c/ProgramData/chocolatey /c/mingw64 /mingw64 -name "x86_64-w64-mingw32-gcc.exe" 2>/dev/null | head -n 1)
+          fi
+
+          if [ -z "$GCC_EXE" ]; then
             echo "[-] 未找到 x86_64-w64-mingw32-gcc.exe"
             exit 1
           fi
-          GCC_UNIX_DIR=$(cygpath -u "$GCC_BIN")
+
+          GCC_UNIX_DIR=$(cygpath -u "$(dirname "$GCC_EXE")")
           export PATH="$GCC_UNIX_DIR:$PATH"
-          echo "[+] 已加入編譯器路徑: $GCC_UNIX_DIR"
+          echo "[+] 已加入编译器路径: $GCC_UNIX_DIR"
           which x86_64-w64-mingw32-gcc
           x86_64-w64-mingw32-gcc --version | head -n 1
 
@@ -61,11 +71,8 @@ jobs:
 
           mkdir -p dist
           SHORT_SHA=$(git rev-parse --short HEAD)
-          if [ -n "${VERSION}" ]; then
-            APP_VERSION="${VERSION}"
-          else
-            APP_VERSION="dev-${SHORT_SHA}"
-          fi
+          APP_VERSION="V3.0"
+          echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
 
           LDFLAGS="-s -w -H windowsgui -X main.version=${APP_VERSION} -X main.commit=${SHORT_SHA}"
           go build -ldflags "${LDFLAGS}" -o "dist/ip-batch-track-gui.exe" .
@@ -74,15 +81,15 @@ jobs:
       - name: Upload Windows EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ip-batch-track-gui-windows-amd64-${{ inputs.version || 'dev' }}
+          name: ip-batch-track-gui-windows-amd64-${{ env.APP_VERSION }}
           path: dist/ip-batch-track-gui.exe
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: ${{ inputs.publish_release && inputs.version != '' }}
+        if: ${{ inputs.publish_release }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.version }}
-          name: Release ${{ inputs.version }}
+          tag_name: ${{ env.APP_VERSION }}
+          name: Release ${{ env.APP_VERSION }}
           files: dist/ip-batch-track-gui.exe
           generate_release_notes: true
