@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（V3.0）'
+        description: '版本號（V3.0）'
         required: false
         default: ''
         type: string
       publish_release:
-        description: '版本号（V3.0）'
+        description:
         required: true
         default: false
         type: boolean
@@ -35,28 +35,30 @@ jobs:
         run: |
           choco install -y mingw --no-progress
 
-      - name: Sync Go modules in CI
-        shell: bash
-        env:
-          PATH: /c/ProgramData/mingw64/mingw64/bin:/mingw64/bin:$PATH
-          CC: x86_64-w64-mingw32-gcc
-          CGO_ENABLED: "1"
-          GOOS: windows
-          GOARCH: amd64
-        run: |
-          go mod tidy
-          go mod download
-
-      - name: Build Windows amd64 GUI EXE
+      - name: Sync Go modules and build Windows amd64 GUI EXE
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
-          PATH: /c/ProgramData/mingw64/mingw64/bin:/mingw64/bin:$PATH
           CC: x86_64-w64-mingw32-gcc
           CGO_ENABLED: "1"
           GOOS: windows
           GOARCH: amd64
         run: |
+          set -e
+          GCC_BIN=$(find /c -name "x86_64-w64-mingw32-gcc.exe" 2>/dev/null | head -n 1 | xargs -r dirname)
+          if [ -z "$GCC_BIN" ]; then
+            echo "[-] 未找到 x86_64-w64-mingw32-gcc.exe"
+            exit 1
+          fi
+          GCC_UNIX_DIR=$(cygpath -u "$GCC_BIN")
+          export PATH="$GCC_UNIX_DIR:$PATH"
+          echo "[+] 已加入編譯器路徑: $GCC_UNIX_DIR"
+          which x86_64-w64-mingw32-gcc
+          x86_64-w64-mingw32-gcc --version | head -n 1
+
+          go mod tidy
+          go mod download
+
           mkdir -p dist
           SHORT_SHA=$(git rev-parse --short HEAD)
           if [ -n "${VERSION}" ]; then
