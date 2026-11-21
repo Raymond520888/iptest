@@ -79,7 +79,7 @@ func main() {
 	a := app.New()
 	isDark := false
 	appTheme := &customTheme{dark: isDark}
-	a.SetTheme(appTheme)
+	a.Settings().SetTheme(appTheme)
 
 	w := a.NewWindow(fmt.Sprintf("批量线路测试工具 %s", version))
 	w.Resize(fyne.NewSize(960, 720))
@@ -297,7 +297,7 @@ func main() {
 	themeBtn = widget.NewButton("🌙 黑夜模式", func() {
 		isDark = !isDark
 		appTheme.dark = isDark
-		a.SetTheme(appTheme)
+		a.Settings().SetTheme(appTheme)
 		if isDark {
 			themeBtn.SetText("☀️ 日间模式")
 			appendLog("[+] 已切换至黑夜模式")
