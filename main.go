@@ -34,7 +34,6 @@ func main() {
 	fmt.Printf("IP Batch Track %s (commit: %s)\n", version, commit)
 	flag.Parse()
 
-	// 1. 检查并自动更新前缀表
 	if _, err := os.Stat(config.DBV4Path); os.IsNotExist(err) {
 		fmt.Println("[+] 未找到本地前缀表，正在从 RIPEstat 拉取更新...")
 		if err := filter.UpdatePrefixDB(); err != nil {
@@ -50,7 +49,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 2. 读取目标文件
 	file, err := os.Open(*inputFile)
 	if err != nil {
 		fmt.Printf("[-] 无法打开文件: %v\n", err)
@@ -73,18 +71,14 @@ func main() {
 	}
 	fmt.Printf("[+] 加载 %d 个目标，并发数 %d\n", len(targets), *conc)
 
-	// 3. 准备运行环境
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	tr := tracer.NewTracer(*timeout, *maxHops)
-
-	// 4. 执行批量测试
 	start := time.Now()
 	results := worker.Run(ctx, targets, tr, matcher, *conc, *enablePing)
 	fmt.Printf("[+] 测试完成，耗时: %v\n", time.Since(start).Round(time.Second))
 
-	// 5. 保存并打印结果 (对齐 Python 的实线表格样式)
 	saveResults(results)
 }
 
@@ -108,7 +102,6 @@ func saveResults(results []worker.Result) {
 		rows = append(rows, []string{ipDisplay, r.Port, r.ISP, r.LineType, r.ASNStr, delay})
 	}
 
-	// 计算列宽
 	colWidths := make([]int, len(headers))
 	for i, h := range headers {
 		colWidths[i] = len(h)
@@ -155,17 +148,12 @@ func saveResults(results []worker.Result) {
 		return
 	}
 	defer f.Close()
-	// 写入 UTF-8 BOM 以兼容 Windows 记事本
 	f.WriteString("\xEF\xBB\xBF")
 
 	sepLine := makeSeparator("-")
 	sepEqual := makeSeparator("=")
 
-	lines := []string{
-		sepLine,
-		formatRow(headers, false),
-		sepEqual,
-	}
+	lines := []string{sepLine, formatRow(headers, false), sepEqual}
 	for _, r := range rows {
 		lines = append(lines, formatRow(r, true))
 	}
@@ -173,8 +161,6 @@ func saveResults(results []worker.Result) {
 
 	outputStr := strings.Join(lines, "\n") + "\n"
 	f.WriteString(outputStr)
-
-	// 打印到终端
 	fmt.Print(outputStr)
 	fmt.Printf("\n[+] 结果已保存至: %s\n", filename)
 }
