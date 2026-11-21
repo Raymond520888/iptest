@@ -35,7 +35,7 @@ var (
 	commit  = "unknown"
 )
 
-// customTheme 支持日间浅绿风格与夜间黑夜模式切换
+// customTheme 支援日間淺綠風格與夜間黑夜模式切換
 type customTheme struct {
 	dark bool
 }
@@ -81,7 +81,7 @@ func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
 	return theme.DefaultTheme().Size(name)
 }
 
-// compactBoxLayout 让控件按指定宽高紧凑排布，不会被 HBox 撑高或撑宽
+// compactBoxLayout 讓控制項按指定寬高緊湊排布，不會被 HBox 撐高或撐寬
 type compactBoxLayout struct {
 	width  float32
 	height float32
@@ -106,7 +106,7 @@ func (l *compactBoxLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	}
 }
 
-// spinnerLayout 将上下两个小按钮紧凑叠放在同一列
+// spinnerLayout 將上下兩個小按鈕緊湊疊放在同一列
 type spinnerLayout struct {
 	width  float32
 	height float32
@@ -136,27 +136,21 @@ func main() {
 	w := a.NewWindow(fmt.Sprintf("ip路由批量测试 %s", version))
 	w.Resize(fyne.NewSize(960, 720))
 
-	// 右上角作者标识
+	// 右上角作者標識
 	topRightLabel := canvas.NewText(bannerTopRight, color.NRGBA{R: 180, G: 40, B: 40, A: 255})
 	topRightLabel.TextSize = 12
 	topRightLabel.TextStyle = fyne.TextStyle{Bold: true}
 	topHeader := container.NewHBox(layout.NewSpacer(), topRightLabel)
 
-	// 1. 目标输入区
+	// 1. 目標輸入區
 	targetHint := widget.NewLabel("输入目标（每行一个，支持 IP:端口#国家，自动提取 IP/域名）：")
 	targetEntry := widget.NewMultiLineEntry()
 	targetEntry.SetPlaceHolder("例如：\n1.1.1.1:443#US\nexample.com:8443#JP\n8.8.8.8")
 
-	// 2. 控制栏组件（紧凑数字框 + 限制最大 128）
+	// 2. 控制欄元件（無勾號 + 寬度完整顯示數字 + 限制最大 128）
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
-	concEntry.Validator = func(s string) error {
-		v, err := strconv.Atoi(strings.TrimSpace(s))
-		if err != nil || v <= 0 || v > maxConcurrency {
-			return fmt.Errorf("需为 1-%d 正整数", maxConcurrency)
-		}
-		return nil
-	}
+	concEntry.Validator = nil
 
 	var adjustingConc bool
 	concEntry.OnChanged = func(s string) {
@@ -178,7 +172,7 @@ func main() {
 		}
 	}
 
-	concInputWrap := container.New(&compactBoxLayout{width: 44, height: 28}, concEntry)
+	concInputWrap := container.New(&compactBoxLayout{width: 69, height: 26}, concEntry)
 
 	incBtn := widget.NewButton("▲", func() {
 		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
@@ -208,13 +202,13 @@ func main() {
 		concEntry.SetText(strconv.Itoa(v))
 		adjustingConc = false
 	})
-	spinnerBox := container.New(&spinnerLayout{width: 20, height: 28}, incBtn, decBtn)
+	spinnerBox := container.New(&spinnerLayout{width: 22, height: 28}, incBtn, decBtn)
 	concBox := container.NewHBox(widget.NewLabel("并发:"), concInputWrap, spinnerBox)
 
 	enablePingCheck := widget.NewCheck("启用延迟测试", nil)
 	statusLabel := widget.NewLabel("就绪")
 
-	// 3. 运行日志区
+	// 3. 執行日誌區
 	logHint := widget.NewLabel("运行日志：")
 	var (
 		logMu      sync.Mutex
@@ -443,7 +437,7 @@ func main() {
 		canvas.Refresh(w.Content())
 	})
 
-	// 版面配置：上方目标输入 + 中间控制栏 + 下方运行日志
+	// 版面配置：上方目標輸入 + 中間控制欄 + 下方執行日誌
 	controlBar := container.NewHBox(
 		concBox,
 		enablePingCheck,
