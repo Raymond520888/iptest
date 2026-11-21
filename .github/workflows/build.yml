@@ -39,6 +39,9 @@ jobs:
           GOARCH: amd64
         run: |
           set -e
+          sed -i 's/\ba\.SetTheme(/a.Settings().SetTheme(/g' main.go
+          grep -n "Settings().SetTheme(" main.go || true
+
           GCC_EXE=""
           for candidate in \
             "/mingw64/bin/x86_64-w64-mingw32-gcc.exe" \
