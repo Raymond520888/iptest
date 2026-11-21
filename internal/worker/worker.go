@@ -70,6 +70,7 @@ func Run(
 					continue
 				}
 
+				// 对齐 nexttraceV5.py：命中目标 ASN 即停止继续比对后续跳点
 				var hitASNs []string
 				seen := make(map[string]bool)
 				for _, hopAddr := range hops {
@@ -77,6 +78,7 @@ func Run(
 					if asn != "" && !seen[asn] {
 						seen[asn] = true
 						hitASNs = append(hitASNs, asn)
+						break
 					}
 				}
 
