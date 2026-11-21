@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -95,6 +97,48 @@ func measurePingDelay(ctx context.Context, ip string, timeout time.Duration) str
 	return fmt.Sprintf("%dms", avg)
 }
 
+func filterOutAS9808(asnStr string) string {
+	if strings.TrimSpace(asnStr) == "" {
+		return ""
+	}
+	parts := strings.Split(asnStr, "/")
+	filtered := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" || strings.EqualFold(trimmed, "AS9808") {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	return strings.Join(filtered, "/")
+}
+
+func writeResultFile(filename string, results []Result) error {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	sb.WriteString(fmt.Sprintf("总计条数: %d\n", len(results)))
+	sb.WriteString(strings.Repeat("-", 80) + "\n")
+
+	for _, r := range results {
+		targetAddr := r.IP
+		if r.Port != "" {
+			targetAddr = fmt.Sprintf("%s:%s", r.IP, r.Port)
+		}
+		if r.Err != nil {
+			sb.WriteString(fmt.Sprintf("%s | 异常: %v | 延迟: %s\n", targetAddr, r.Err, r.Delay))
+			continue
+		}
+		asnDisplay := r.ASNStr
+		if asnDisplay == "" {
+			asnDisplay = "无"
+		}
+		sb.WriteString(fmt.Sprintf("%s | 运营商: %s | 线路: %s | ASN: %s | 延迟: %s\n",
+			targetAddr, r.ISP, r.LineType, asnDisplay, r.Delay))
+	}
+
+	return os.WriteFile(filename, []byte(sb.String()), 0644)
+}
+
 func Run(
 	ctx context.Context,
 	targets []Target,
@@ -126,14 +170,14 @@ func Run(
 				default:
 				}
 
-				delayStr := "未開啟"
+				delayStr := "未开启"
 				if enablePing {
 					delayStr = measurePingDelay(ctx, target.IP, 3*time.Second)
 				}
 
 				hops, err := tr.Trace(ctx, target.IP, target.Port)
 				if err != nil {
-					res := Result{Target: target, ISP: "測試異常", LineType: "未知", Delay: delayStr, Err: err}
+					res := Result{Target: target, ISP: "测试异常", LineType: "未知", Delay: delayStr, Err: err}
 					results <- res
 					if onResult != nil {
 						onResult(res)
@@ -141,12 +185,12 @@ func Run(
 					continue
 				}
 
-				// 收集路徑上命中的 ASN；若命中 CMIN2 (AS58807) 可提前結束
+				// 收集路径上命中的 ASN（忽略 AS9808）；若命中 CMIN2 (AS58807) 可提前结束
 				var hitASNs []string
 				seen := make(map[string]bool)
 				for _, hopAddr := range hops {
 					asn := matcher.Match(hopAddr)
-					if asn != "" && !seen[asn] {
+					if asn != "" && asn != "AS9808" && !seen[asn] {
 						seen[asn] = true
 						hitASNs = append(hitASNs, asn)
 						if asn == "AS58807" {
@@ -156,6 +200,7 @@ func Run(
 				}
 
 				isp, lineType, asnStr := filter.AnalyzeRoute(hitASNs)
+				asnStr = filterOutAS9808(asnStr)
 				res := Result{Target: target, ISP: isp, LineType: lineType, ASNStr: asnStr, Delay: delayStr}
 				results <- res
 				if onResult != nil {
@@ -185,5 +230,9 @@ func Run(
 	for r := range results {
 		out = append(out, r)
 	}
+
+	resultPath := filepath.Join(".", "Result.txt")
+	_ = writeResultFile(resultPath, out)
+
 	return out
 }
