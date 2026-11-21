@@ -1,4 +1,4 @@
-name: Manual Build (Windows x64 & macOS Universal)
+name: Manual Build (Windows x64 EXE)
 
 on:
   workflow_dispatch:
@@ -18,138 +18,52 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
+  build-windows:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      commit: ${{ steps.meta.outputs.commit }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Resolve version and commit
-        id: meta
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Verify code and dependencies
         run: |
+          go mod tidy
+          go vet ./...
+
+      - name: Build Windows amd64 EXE
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p dist
           SHORT_SHA=$(git rev-parse --short HEAD)
-          if [ -n "${{ inputs.version }}" ]; then
-            APP_VERSION="${{ inputs.version }}"
+          if [ -n "${VERSION}" ]; then
+            APP_VERSION="${VERSION}"
           else
             APP_VERSION="dev-${SHORT_SHA}"
           fi
-          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "commit=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
-  build-windows:
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          LDFLAGS="-s -w -X main.version=${APP_VERSION} -X main.commit=${SHORT_SHA}"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o "dist/ip-batch-track.exe" .
+          ls -lh dist/ip-batch-track.exe
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-
-      - name: Verify code and dependencies
-        run: |
-          go mod tidy
-          go vet ./...
-
-      - name: Build Windows amd64 binary and package
-        shell: bash
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-          COMMIT: ${{ needs.prepare.outputs.commit }}
-        run: |
-          mkdir -p out/pkg
-          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
-          PKG_NAME="ip-batch-track_${VERSION}_windows_amd64"
-
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o "out/pkg/ip-batch-track.exe" .
-          [ -f README.md ] && cp README.md "out/pkg/"
-          [ -f LICENSE ] && cp LICENSE "out/pkg/"
-
-          (cd out && zip -qr "${PKG_NAME}.zip" pkg)
-          mv "out/${PKG_NAME}.zip" "out/ip-batch-track_windows_amd64.zip"
-
-      - name: Upload Windows artifact
+      - name: Upload Windows EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-amd64-${{ needs.prepare.outputs.version }}
-          path: out/ip-batch-track_windows_amd64.zip
+          name: ip-batch-track-windows-amd64-${{ inputs.version || 'dev' }}
+          path: dist/ip-batch-track.exe
           if-no-files-found: error
-
-  build-macos-universal:
-    needs: prepare
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-
-      - name: Verify code and dependencies
-        run: |
-          go mod tidy
-          go vet ./...
-
-      - name: Build macOS amd64 + arm64 and create Universal binary
-        shell: bash
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-          COMMIT: ${{ needs.prepare.outputs.commit }}
-        run: |
-          mkdir -p out/pkg
-          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
-
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-amd64" .
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-arm64" .
-
-          lipo -create -output "out/pkg/ip-batch-track" "out/ip-batch-track-amd64" "out/ip-batch-track-arm64"
-          chmod +x "out/pkg/ip-batch-track"
-          lipo -info "out/pkg/ip-batch-track"
-
-          [ -f README.md ] && cp README.md "out/pkg/"
-          [ -f LICENSE ] && cp LICENSE "out/pkg/"
-
-          tar -czf "out/ip-batch-track_darwin_universal.tar.gz" -C out pkg
-
-      - name: Upload macOS Universal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: darwin-universal-${{ needs.prepare.outputs.version }}
-          path: out/ip-batch-track_darwin_universal.tar.gz
-          if-no-files-found: error
-
-  release:
-    needs: [prepare, build-windows, build-macos-universal]
-    if: ${{ inputs.publish_release && inputs.version != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-
-      - name: Rename assets with version
-        run: |
-          mkdir -p final-assets
-          cp "release-assets/windows-amd64-${{ needs.prepare.outputs.version }}/ip-batch-track_windows_amd64.zip" \
-             "final-assets/ip-batch-track_${{ needs.prepare.outputs.version }}_windows_amd64.zip"
-          cp "release-assets/darwin-universal-${{ needs.prepare.outputs.version }}/ip-batch-track_darwin_universal.tar.gz" \
-             "final-assets/ip-batch-track_${{ needs.prepare.outputs.version }}_darwin_universal.tar.gz"
-          ls -lh final-assets/
 
       - name: Publish GitHub Release
+        if: ${{ inputs.publish_release && inputs.version != '' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.prepare.outputs.version }}
-          name: Release ${{ needs.prepare.outputs.version }}
-          files: final-assets/*
+          tag_name: ${{ inputs.version }}
+          name: Release ${{ inputs.version }}
+          files: dist/ip-batch-track.exe
           generate_release_notes: true
