@@ -25,14 +25,14 @@ import (
 	"ip-batch-track/internal/worker"
 )
 
-const bannerTopRight = "ip批量路由测试 V3.0                  Make by Raymond"
+const bannerTopRight = "Make by Raymond"
 
 var (
 	version = "V3.0"
 	commit  = "unknown"
 )
 
-// customTheme 支持日间浅绿风格与夜间黑夜模式切换
+// customTheme 支援日間淺綠風格與夜間黑夜模式切換
 type customTheme struct {
 	dark bool
 }
@@ -75,27 +75,47 @@ func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
 	return theme.DefaultTheme().Size(name)
 }
 
+// fixedWidthLayout 讓輸入框寬度貼合數字內容，避免多餘空白
+type fixedWidthLayout struct {
+	width float32
+}
+
+func (l *fixedWidthLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(l.width, 0)
+	}
+	min := objects[0].MinSize()
+	return fyne.NewSize(l.width, min.Height)
+}
+
+func (l *fixedWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, o := range objects {
+		o.Resize(fyne.NewSize(l.width, size.Height))
+		o.Move(fyne.NewPos(0, 0))
+	}
+}
+
 func main() {
 	a := app.New()
 	isDark := false
 	appTheme := &customTheme{dark: isDark}
 	a.Settings().SetTheme(appTheme)
 
-	w := a.NewWindow(fmt.Sprintf("批量线路测试工具 %s", version))
+	w := a.NewWindow(fmt.Sprintf("ip路由批量测试 %s", version))
 	w.Resize(fyne.NewSize(960, 720))
 
-	// 右上角作者/工具标识
+	// 右上角作者標識
 	topRightLabel := canvas.NewText(bannerTopRight, color.NRGBA{R: 180, G: 40, B: 40, A: 255})
 	topRightLabel.TextSize = 12
 	topRightLabel.TextStyle = fyne.TextStyle{Bold: true}
 	topHeader := container.NewHBox(layout.NewSpacer(), topRightLabel)
 
-	// 1. 目标输入区
+	// 1. 目標輸入區
 	targetHint := widget.NewLabel("输入目标（每行一个，支持 IP:端口#国家，自动提取 IP/域名）：")
 	targetEntry := widget.NewMultiLineEntry()
 	targetEntry.SetPlaceHolder("例如：\n1.1.1.1:443#US\nexample.com:8443#JP\n8.8.8.8")
 
-	// 2. 控制栏组件
+	// 2. 控制欄元件
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
 	concEntry.Validator = func(s string) error {
@@ -105,6 +125,7 @@ func main() {
 		}
 		return nil
 	}
+	concInputWrap := container.New(&fixedWidthLayout{width: 64}, concEntry)
 
 	incBtn := widget.NewButton("▲", func() {
 		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
@@ -122,12 +143,12 @@ func main() {
 		}
 	})
 	spinnerBox := container.NewVBox(incBtn, decBtn)
-	concBox := container.NewHBox(widget.NewLabel("并发:"), concEntry, spinnerBox)
+	concBox := container.NewHBox(widget.NewLabel("并发:"), concInputWrap, spinnerBox)
 
 	enablePingCheck := widget.NewCheck("启用延迟测试", nil)
 	statusLabel := widget.NewLabel("就绪")
 
-	// 3. 运行日志区
+	// 3. 執行日誌區
 	logHint := widget.NewLabel("运行日志：")
 	var (
 		logMu   sync.Mutex
@@ -308,7 +329,7 @@ func main() {
 		canvas.Refresh(w.Content())
 	})
 
-	// 版面配置：上方目标输入 + 中间控制栏 + 下方运行日志
+	// 版面配置：上方目標輸入 + 中間控制欄 + 下方執行日誌
 	controlBar := container.NewHBox(
 		concBox,
 		enablePingCheck,
@@ -350,6 +371,6 @@ func main() {
 	)
 
 	w.SetContent(mainLayout)
-	appendLog(fmt.Sprintf("[+] 批量线路测试工具 %s 已启动", version))
+	appendLog(fmt.Sprintf("[+] ip路由批量测试 %s 已启动", version))
 	w.ShowAndRun()
 }
