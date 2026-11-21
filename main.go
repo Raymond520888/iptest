@@ -24,7 +24,7 @@ var (
 )
 
 func main() {
-	fmt.Println("ip批量路由测试                  Make by Raymond")
+	fmt.Println("ip批量路由测试 V3.0                  Make by Raymond")
 
 	var (
 		inputFile   = flag.String("f", "testdata/ips.txt", "目标文件路径")
