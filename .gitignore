@@ -1,1 +1,19 @@
+# Go 编译产物
+ip-Batch-Track-*
+*.exe
+*.test
+*.out
 
+# 运行时数据
+asn_prefixes_v4.json
+asn_prefixes_v6.json
+result_*.txt
+
+# Python legacy 缓存
+__pycache__/
+*.pyc
+.venv/
+
+# 系统
+.DS_Store
+Thumbs.db
