@@ -1,4 +1,4 @@
-name: Manual Build (Windows x64 EXE)
+name: Build Windows GUI
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -30,15 +30,20 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Verify code and dependencies
+      - name: Install MinGW-w64 for CGO
+        shell: bash
         run: |
-          go mod tidy
-          go vet ./...
+          pacman -S --noconfirm --needed mingw-w64-x86_64-gcc
 
-      - name: Build Windows amd64 EXE
+      - name: Build Windows amd64 GUI EXE
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
+          PATH: /mingw64/bin:$PATH
+          CC: x86_64-w64-mingw32-gcc
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
         run: |
           mkdir -p dist
           SHORT_SHA=$(git rev-parse --short HEAD)
@@ -48,15 +53,15 @@ jobs:
             APP_VERSION="dev-${SHORT_SHA}"
           fi
 
-          LDFLAGS="-s -w -X main.version=${APP_VERSION} -X main.commit=${SHORT_SHA}"
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o "dist/ip-batch-track.exe" .
-          ls -lh dist/ip-batch-track.exe
+          LDFLAGS="-s -w -H windowsgui -X main.version=${APP_VERSION} -X main.commit=${SHORT_SHA}"
+          go build -ldflags "${LDFLAGS}" -o "dist/ip-batch-track-gui.exe" .
+          ls -lh dist/ip-batch-track-gui.exe
 
       - name: Upload Windows EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ip-batch-track-windows-amd64-${{ inputs.version || 'dev' }}
-          path: dist/ip-batch-track.exe
+          name: ip-batch-track-gui-windows-amd64-${{ inputs.version || 'dev' }}
+          path: dist/ip-batch-track-gui.exe
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -65,5 +70,5 @@ jobs:
         with:
           tag_name: ${{ inputs.version }}
           name: Release ${{ inputs.version }}
-          files: dist/ip-batch-track.exe
+          files: dist/ip-batch-track-gui.exe
           generate_release_notes: true
