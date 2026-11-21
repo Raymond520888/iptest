@@ -19,6 +19,7 @@ asn_prefixes_v6.json
 
 # 测试完成后自动生成的报告结果
 result_*.txt
+Result.txt
 
 # ===== 系统与编辑器缓存 =====
 # macOS 系统文件
