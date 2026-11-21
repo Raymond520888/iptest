@@ -35,6 +35,18 @@ jobs:
         run: |
           choco install -y mingw --no-progress
 
+      - name: Sync Go modules in CI
+        shell: bash
+        env:
+          PATH: /c/ProgramData/mingw64/mingw64/bin:/mingw64/bin:$PATH
+          CC: x86_64-w64-mingw32-gcc
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go mod tidy
+          go mod download
+
       - name: Build Windows amd64 GUI EXE
         shell: bash
         env:
