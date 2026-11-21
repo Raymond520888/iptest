@@ -19,7 +19,7 @@ import (
 	"ip-batch-track/internal/tracer"
 )
 
-var pingTimeRegex = regexp.MustCompile(`(?i)(?:時間|time)[=:]\s*([\d.]+)\s*ms`)
+var pingTimeRegex = regexp.MustCompile(`(?i)(?:时间|時間|time)\s*[=:]\s*[<~]?\s*([\d.]+)\s*ms`)
 
 type Target struct {
 	IP      string
@@ -34,6 +34,14 @@ type Result struct {
 	ASNStr   string
 	Delay    string
 	Err      error
+}
+
+func resolveResultFilePath() string {
+	const fileName = "Result.txt"
+	if exePath, err := os.Executable(); err == nil && strings.TrimSpace(exePath) != "" {
+		return filepath.Join(filepath.Dir(exePath), fileName)
+	}
+	return filepath.Join(".", fileName)
 }
 
 func measurePingDelay(ctx context.Context, ip string, timeout time.Duration) string {
@@ -231,7 +239,7 @@ func Run(
 		out = append(out, r)
 	}
 
-	resultPath := filepath.Join(".", "Result.txt")
+	resultPath := resolveResultFilePath()
 	_ = writeResultFile(resultPath, out)
 
 	return out
