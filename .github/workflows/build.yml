@@ -1,17 +1,17 @@
-name: Auto Build (Windows x64 & macOS Universal)
+name: Manual Build (Windows x64 & macOS Universal)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'V3.0'
+        description: '版本号（V3.0）'
         required: false
         default: ''
         type: string
       publish_release:
-        description: ''
+        description: '版本号（V3.0）'
         required: true
-        default: true
+        default: false
         type: boolean
 
 permissions:
@@ -108,8 +108,8 @@ jobs:
           mkdir -p out/pkg
           LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
 
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-amd64" .
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-arm64" .
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-amd64" .
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "${LDFLAGS}" -o "out/ip-batch-track-arm64" .
 
           lipo -create -output "out/pkg/ip-batch-track" "out/ip-batch-track-amd64" "out/ip-batch-track-arm64"
           chmod +x "out/pkg/ip-batch-track"
