@@ -32,7 +32,7 @@ var (
 	commit  = "unknown"
 )
 
-// customTheme 支援日間淺綠風格與夜間黑夜模式切換
+// customTheme 支持日间浅绿风格与夜间黑夜模式切换
 type customTheme struct {
 	dark bool
 }
@@ -75,7 +75,7 @@ func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
 	return theme.DefaultTheme().Size(name)
 }
 
-// fixedWidthLayout 讓輸入框寬度貼合數字內容，避免多餘空白
+// fixedWidthLayout 让输入框宽度贴合数字内容，避免多余空白
 type fixedWidthLayout struct {
 	width float32
 }
@@ -104,18 +104,18 @@ func main() {
 	w := a.NewWindow(fmt.Sprintf("ip路由批量测试 %s", version))
 	w.Resize(fyne.NewSize(960, 720))
 
-	// 右上角作者標識
+	// 右上角作者标识
 	topRightLabel := canvas.NewText(bannerTopRight, color.NRGBA{R: 180, G: 40, B: 40, A: 255})
 	topRightLabel.TextSize = 12
 	topRightLabel.TextStyle = fyne.TextStyle{Bold: true}
 	topHeader := container.NewHBox(layout.NewSpacer(), topRightLabel)
 
-	// 1. 目標輸入區
+	// 1. 目标输入区
 	targetHint := widget.NewLabel("输入目标（每行一个，支持 IP:端口#国家，自动提取 IP/域名）：")
 	targetEntry := widget.NewMultiLineEntry()
 	targetEntry.SetPlaceHolder("例如：\n1.1.1.1:443#US\nexample.com:8443#JP\n8.8.8.8")
 
-	// 2. 控制欄元件
+	// 2. 控制栏组件
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
 	concEntry.Validator = func(s string) error {
@@ -148,13 +148,14 @@ func main() {
 	enablePingCheck := widget.NewCheck("启用延迟测试", nil)
 	statusLabel := widget.NewLabel("就绪")
 
-	// 3. 執行日誌區
+	// 3. 运行日志区
 	logHint := widget.NewLabel("运行日志：")
 	var (
-		logMu   sync.Mutex
-		logBuf  strings.Builder
-		cancel  context.CancelFunc
-		running bool
+		logMu       sync.Mutex
+		logBuf      strings.Builder
+		cancel      context.CancelFunc
+		running     bool
+		updatingDB  bool
 	)
 
 	logEntry := widget.NewMultiLineEntry()
@@ -198,28 +199,72 @@ func main() {
 				stopBtn.Enable()
 			} else {
 				startBtn.Enable()
-				updateDBBtn.Enable()
+				if !updatingDB {
+					updateDBBtn.Enable()
+				}
 				clearTargetBtn.Enable()
 				stopBtn.Disable()
 			}
 		})
 	}
 
+	runPrefixUpdate := func(auto bool) {
+		logMu.Lock()
+		if updatingDB {
+			logMu.Unlock()
+			if !auto {
+				appendLog("[!] 前缀表正在更新中，请稍候...")
+			}
+			return
+		}
+		updatingDB = true
+		logMu.Unlock()
+
+		fyne.Do(func() {
+			updateDBBtn.Disable()
+			if !running {
+				statusLabel.SetText("更新前缀表中...")
+			}
+		})
+
+		if auto {
+			appendLog("[+] 启动自动更新前缀表 (asn_prefixes_v4 + asn_prefixes_v6)...")
+		} else {
+			appendLog("[+] 正在后台更新前缀表 (asn_prefixes_v4 + asn_prefixes_v6)，请稍候...")
+		}
+
+		go func() {
+			defer func() {
+				logMu.Lock()
+				updatingDB = false
+				logMu.Unlock()
+				fyne.Do(func() {
+					if !running {
+						updateDBBtn.Enable()
+						statusLabel.SetText("就绪")
+					}
+				})
+			}()
+
+			if err := filter.UpdatePrefixDB(); err != nil {
+				if auto {
+					appendLog(fmt.Sprintf("[-] 启动自动更新前缀表失败（可稍后手动点击更新）: %v", err))
+				} else {
+					appendLog(fmt.Sprintf("[-] 前缀表更新失败: %v", err))
+					fyne.Do(func() { dialog.ShowError(err, w) })
+				}
+				return
+			}
+
+			appendLog("[+] 前缀表 (asn_prefixes_v4 + asn_prefixes_v6) 更新完成")
+		}()
+	}
+
 	updateDBBtn = widget.NewButton("更新前缀表 (IPv4+IPv6)", func() {
 		if running {
 			return
 		}
-		setBusy(true, "更新中...")
-		appendLog("[+] 正在后台更新前缀表 (IPv4+IPv6)，请稍候...")
-		go func() {
-			defer setBusy(false, "就绪")
-			if err := filter.UpdatePrefixDB(); err != nil {
-				appendLog(fmt.Sprintf("[-] 前缀表更新失败: %v", err))
-				fyne.Do(func() { dialog.ShowError(err, w) })
-				return
-			}
-			appendLog("[+] 前缀表更新完成，已自动切换至最新前缀表")
-		}()
+		runPrefixUpdate(false)
 	})
 
 	stopBtn = widget.NewButton("终止测试", func() {
@@ -329,7 +374,7 @@ func main() {
 		canvas.Refresh(w.Content())
 	})
 
-	// 版面配置：上方目標輸入 + 中間控制欄 + 下方執行日誌
+	// 版面配置：上方目标输入 + 中间控制栏 + 下方运行日志
 	controlBar := container.NewHBox(
 		concBox,
 		enablePingCheck,
@@ -372,5 +417,6 @@ func main() {
 
 	w.SetContent(mainLayout)
 	appendLog(fmt.Sprintf("[+] ip路由批量测试 %s 已启动", version))
+	runPrefixUpdate(true)
 	w.ShowAndRun()
 }
