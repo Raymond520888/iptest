@@ -81,50 +81,33 @@ func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
 	return theme.DefaultTheme().Size(name)
 }
 
-// compactBoxLayout 讓控制項按指定寬高緊湊排布，不會被 HBox 撐高或撐寬
+// compactBoxLayout 讓控制項按指定寬高緊湊排布，避免被 HBox 撐寬
 type compactBoxLayout struct {
 	width  float32
 	height float32
 }
 
 func (l *compactBoxLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(l.width, l.height)
+	h := l.height
+	if h <= 0 && len(objects) > 0 {
+		h = objects[0].MinSize().Height
+	}
+	return fyne.NewSize(l.width, h)
 }
 
 func (l *compactBoxLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	w := l.width
-	h := l.height
 	if w <= 0 {
 		w = size.Width
 	}
-	if h <= 0 {
-		h = size.Height
+	h := size.Height
+	if l.height > 0 && l.height < h {
+		h = l.height
 	}
 	for _, o := range objects {
 		o.Resize(fyne.NewSize(w, h))
-		o.Move(fyne.NewPos(0, 0))
+		o.Move(fyne.NewPos(0, (size.Height-h)/2))
 	}
-}
-
-// spinnerLayout 將上下兩個小按鈕緊湊疊放在同一列
-type spinnerLayout struct {
-	width  float32
-	height float32
-}
-
-func (l *spinnerLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(l.width, l.height)
-}
-
-func (l *spinnerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 2 {
-		return
-	}
-	halfH := size.Height / 2
-	objects[0].Move(fyne.NewPos(0, 0))
-	objects[0].Resize(fyne.NewSize(size.Width, halfH))
-	objects[1].Move(fyne.NewPos(0, halfH))
-	objects[1].Resize(fyne.NewSize(size.Width, size.Height-halfH))
 }
 
 func main() {
@@ -147,9 +130,11 @@ func main() {
 	targetEntry := widget.NewMultiLineEntry()
 	targetEntry.SetPlaceHolder("例如：\n1.1.1.1:443#US\nexample.com:8443#JP\n8.8.8.8")
 
-	// 2. 控制欄元件（無勾號 + 寬度完整顯示數字 + 限制最大 128）
+	// 2. 控制欄元件（純數字輸入框 + 居中 + 無上下按鈕 + 無滾動條 + 無勾號 + 上限 128）
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
+	concEntry.Alignment = fyne.TextAlignCenter
+	concEntry.Wrapping = fyne.TextTruncate
 	concEntry.Validator = nil
 
 	var adjustingConc bool
@@ -172,38 +157,10 @@ func main() {
 		}
 	}
 
-	concInputWrap := container.New(&compactBoxLayout{width: 66, height: 23}, concEntry)
-
-	incBtn := widget.NewButton("▲", func() {
-		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
-		if v <= 0 {
-			v = 16
-		} else {
-			v += 16
-		}
-		if v > maxConcurrency {
-			v = maxConcurrency
-		}
-		adjustingConc = true
-		concEntry.SetText(strconv.Itoa(v))
-		adjustingConc = false
-	})
-	decBtn := widget.NewButton("▼", func() {
-		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
-		if v > maxConcurrency {
-			v = maxConcurrency
-		}
-		if v > 16 {
-			v -= 16
-		} else {
-			v = 1
-		}
-		adjustingConc = true
-		concEntry.SetText(strconv.Itoa(v))
-		adjustingConc = false
-	})
-	spinnerBox := container.New(&spinnerLayout{width: 22, height: 28}, incBtn, decBtn)
-	concBox := container.NewHBox(widget.NewLabel("并发:"), concInputWrap, spinnerBox)
+	ctrlHeight := concEntry.MinSize().Height
+	concInputWrap := container.New(&compactBoxLayout{width: 58, height: ctrlHeight}, concEntry)
+	concLabel := container.NewCenter(widget.NewLabel("并发:"))
+	concBox := container.NewHBox(concLabel, concInputWrap)
 
 	enablePingCheck := widget.NewCheck("启用延迟测试", nil)
 	statusLabel := widget.NewLabel("就绪")
