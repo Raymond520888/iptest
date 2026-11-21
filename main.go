@@ -133,7 +133,6 @@ func main() {
 	// 2. 控制欄元件（純數字輸入框 + 居中 + 無上下按鈕 + 無滾動條 + 無勾號 + 上限 128）
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
-	concEntry.Alignment = fyne.TextAlignCenter
 	concEntry.Wrapping = fyne.TextTruncate
 	concEntry.Validator = nil
 
