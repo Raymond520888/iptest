@@ -72,20 +72,57 @@ jobs:
           go mod tidy
           go mod download
 
-          mkdir -p dist
+          mkdir -p dist/package
           SHORT_SHA=$(git rev-parse --short HEAD)
           APP_VERSION="V3.0"
           echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
 
           LDFLAGS="-s -w -H windowsgui -X main.version=${APP_VERSION} -X main.commit=${SHORT_SHA}"
-          go build -ldflags "${LDFLAGS}" -o "dist/ip-batch-track-gui.exe" .
-          ls -lh dist/ip-batch-track-gui.exe
+          go build -ldflags "${LDFLAGS}" -o "dist/package/ip-batch-track-gui.exe" .
 
-      - name: Upload Windows EXE artifact
+          # 查找 Go 模块缓存中的 WinDivert 运行时文件（x64）
+          GOMODCACHE_WIN=$(go env GOMODCACHE)
+          GOMODCACHE_UNIX=$(cygpath -u "$GOMODCACHE_WIN")
+          echo "[+] 正在查找 WinDivert 运行时文件 (缓存目录: $GOMODCACHE_UNIX)..."
+
+          DLL_SRC=$(find "$GOMODCACHE_UNIX" -iname "WinDivert.dll" 2>/dev/null | grep -iE "x64|amd64|64" | head -n 1)
+          if [ -z "$DLL_SRC" ]; then
+            DLL_SRC=$(find "$GOMODCACHE_UNIX" -iname "WinDivert.dll" 2>/dev/null | head -n 1)
+          fi
+
+          SYS_SRC=$(find "$GOMODCACHE_UNIX" -iname "WinDivert64.sys" 2>/dev/null | head -n 1)
+
+          if [ -n "$DLL_SRC" ]; then
+            cp -f "$DLL_SRC" "dist/package/WinDivert.dll"
+            echo "[+] 已复制 WinDivert.dll <- $DLL_SRC"
+          else
+            echo "[!] 未在模块缓存中找到 WinDivert.dll"
+            exit 1
+          fi
+
+          if [ -n "$SYS_SRC" ]; then
+            cp -f "$SYS_SRC" "dist/package/WinDivert64.sys"
+            echo "[+] 已复制 WinDivert64.sys <- $SYS_SRC"
+          else
+            echo "[!] 警告：未在模块缓存中找到 WinDivert64.sys，若运行时提示缺少驱动请补齐"
+          fi
+
+          ls -lh dist/package/
+
+      - name: Pack ZIP archive with WinDivert
+        shell: pwsh
+        run: |
+          $ver = $env:APP_VERSION
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = "V3.0" }
+          $zipPath = "dist/ip-batch-track-gui-windows-amd64-$ver.zip"
+          Compress-Archive -Path "dist/package/*" -DestinationPath $zipPath -Force
+          Get-Item $zipPath | Select-Object Name, Length
+
+      - name: Upload Windows ZIP artifact
         uses: actions/upload-artifact@v7
         with:
           name: ip-batch-track-gui-windows-amd64-${{ env.APP_VERSION }}
-          path: dist/ip-batch-track-gui.exe
+          path: dist/ip-batch-track-gui-windows-amd64-${{ env.APP_VERSION }}.zip
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -94,5 +131,5 @@ jobs:
         with:
           tag_name: ${{ env.APP_VERSION }}
           name: Release ${{ env.APP_VERSION }}
-          files: dist/ip-batch-track-gui.exe
+          files: dist/ip-batch-track-gui-windows-amd64-${{ env.APP_VERSION }}.zip
           generate_release_notes: true
