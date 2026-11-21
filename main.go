@@ -151,11 +151,11 @@ func main() {
 	// 3. 运行日志区
 	logHint := widget.NewLabel("运行日志：")
 	var (
-		logMu       sync.Mutex
-		logBuf      strings.Builder
-		cancel      context.CancelFunc
-		running     bool
-		updatingDB  bool
+		logMu      sync.Mutex
+		logBuf     strings.Builder
+		cancel     context.CancelFunc
+		running    bool
+		updatingDB bool
 	)
 
 	logEntry := widget.NewMultiLineEntry()
@@ -338,25 +338,28 @@ func main() {
 
 			cfg := config.Config{
 				Concurrency: conc,
-				Timeout:     120 * time.Second,
+				Timeout:     8 * time.Second,
 				MaxHops:     30,
 				EnablePing:  enablePing,
 			}
 
+			for _, t := range targets {
+				appendLog(fmt.Sprintf("  > 正在探测 %s:%s ...", t.IP, t.Port))
+			}
+
 			tr := tracer.NewTracer(cfg.Timeout, cfg.MaxHops)
 			startTime := time.Now()
-			results := worker.Run(runCtx, targets, tr, matcher, cfg.Concurrency, cfg.EnablePing)
-			elapsed := time.Since(startTime).Round(time.Second)
-
-			appendLog(fmt.Sprintf("[+] 测试结束，耗时 %v，共取得 %d 条结果", elapsed, len(results)))
-			for _, r := range results {
+			results := worker.Run(runCtx, targets, tr, matcher, cfg.Concurrency, cfg.EnablePing, func(r worker.Result) {
 				if r.Err != nil {
 					appendLog(fmt.Sprintf("  - %s:%s | 异常: %v", r.IP, r.Port, r.Err))
 				} else {
 					appendLog(fmt.Sprintf("  - %s:%s | 运营商: %s | 线路: %s | ASN: %s | 延迟: %s",
 						r.IP, r.Port, r.ISP, r.LineType, r.ASNStr, r.Delay))
 				}
-			}
+			})
+			elapsed := time.Since(startTime).Round(time.Second)
+
+			appendLog(fmt.Sprintf("[+] 测试结束，耗时 %v，共取得 %d 条结果", elapsed, len(results)))
 		}()
 	})
 
