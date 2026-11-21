@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      nexttrace_version:
+        description: 'NextTrace 版本（留空自动获取最新 Release）'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -96,20 +101,31 @@ jobs:
             cp -f "$DLL_SRC" "dist/package/WinDivert.dll"
             echo "[+] 已复制 WinDivert.dll <- $DLL_SRC"
           else
-            echo "[!] 未在模块缓存中找到 WinDivert.dll"
-            exit 1
+            echo "[!] 未在模块缓存中找到 WinDivert.dll，跳过"
           fi
 
           if [ -n "$SYS_SRC" ]; then
             cp -f "$SYS_SRC" "dist/package/WinDivert64.sys"
             echo "[+] 已复制 WinDivert64.sys <- $SYS_SRC"
           else
-            echo "[!] 警告：未在模块缓存中找到 WinDivert64.sys，若运行时提示缺少驱动请补齐"
+            echo "[!] 警告：未在模块缓存中找到 WinDivert64.sys"
           fi
 
-          ls -lh dist/package/
+      - name: Download nexttrace.exe into package directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ver = "${{ inputs.nexttrace_version }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($ver)) {
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/nxtrace/NTrace-core/releases/latest" -Headers @{ "User-Agent" = "github-actions" }
+            $ver = $release.tag_name
+          }
+          $url = "https://github.com/nxtrace/NTrace-core/releases/download/$ver/nexttrace_windows_amd64.exe"
+          Write-Host "[+] 下载 nexttrace ($ver): $url"
+          Invoke-WebRequest -Uri $url -OutFile "dist/package/nexttrace.exe"
+          Get-ChildItem "dist/package/" | Select-Object Name, Length
 
-      - name: Pack ZIP archive with WinDivert
+      - name: Pack ZIP archive
         shell: pwsh
         run: |
           $ver = $env:APP_VERSION
