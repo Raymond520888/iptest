@@ -24,6 +24,8 @@ var (
 )
 
 func main() {
+	fmt.Println("ip批量路由测试                  Make by Raymond")
+
 	var (
 		inputFile   = flag.String("f", "testdata/ips.txt", "目标文件路径")
 		conc        = flag.Int("c", 128, "并发数")
@@ -220,7 +222,10 @@ func saveResults(results []worker.Result) {
 	lines = append(lines, sepLine)
 
 	outputStr := strings.Join(lines, "\n") + "\n"
-	_, _ = f.WriteString(outputStr)
+	if _, err := f.WriteString(outputStr); err != nil {
+		fmt.Printf("[-] 写入结果文件失败: %v\n", err)
+		return
+	}
 	fmt.Print(outputStr)
 	fmt.Printf("\n[+] 已保存结果至: %s\n", filename)
 }
