@@ -1,1 +1,60 @@
+name: Build
 
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            ext: '.exe'
+            label: 'windows-amd64'
+          - goos: darwin
+            goarch: amd64
+            ext: ''
+            label: 'macos-amd64'
+          - goos: darwin
+            goarch: arm64
+            ext: ''
+            label: 'macos-arm64'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: go mod tidy
+        run: go mod tidy
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          OUTPUT="ip-Batch-Track-${{ matrix.label }}${{ matrix.ext }}"
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }}" \
+            -o "$OUTPUT" .
+          ls -lh "$OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ip-Batch-Track-${{ matrix.label }}
+          path: ip-Batch-Track-${{ matrix.label }}${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 14
