@@ -24,6 +24,13 @@ type Result struct {
 }
 
 func Run(ctx context.Context, targets []Target, tr *tracer.Tracer, matcher *filter.ASNMatcher, concurrency int, enablePing bool) []Result {
+	if len(targets) == 0 {
+		return nil
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
 	jobs := make(chan Target)
 	results := make(chan Result, len(targets))
 
@@ -39,13 +46,13 @@ func Run(ctx context.Context, targets []Target, tr *tracer.Tracer, matcher *filt
 				default:
 				}
 
-				delayStr := "未开启测试"
+				delayStr := "未开启"
 				if enablePing {
-					// 延迟测试可在此扩展，当前保持占位
-					delayStr = "N/A"
+					// 延迟测试尚未接入，当前返回占位说明
+					delayStr = "暂未支持"
 				}
 
-				hops, err := tr.Trace(ctx, target.IP)
+				hops, err := tr.Trace(ctx, target.IP, target.Port)
 				if err != nil {
 					results <- Result{Target: target, ISP: "测试异常", LineType: "未知", Delay: delayStr, Err: err}
 					continue
