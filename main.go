@@ -24,17 +24,26 @@ var (
 
 func main() {
 	var (
-		inputFile  = flag.String("f", "testdata/ips.txt", "目标文件路径")
-		conc       = flag.Int("c", 128, "并发数")
-		timeout    = flag.Duration("timeout", 120*time.Second, "单次追踪超时")
-		maxHops    = flag.Int("m", 30, "最大跳数")
-		enablePing = flag.Bool("ping", false, "启用延迟测试")
+		inputFile   = flag.String("f", "testdata/ips.txt", "目标文件路径")
+		conc        = flag.Int("c", 128, "并发数")
+		timeout     = flag.Duration("timeout", 120*time.Second, "单次追踪超时")
+		maxHops     = flag.Int("m", 30, "最大跳数")
+		enablePing  = flag.Bool("ping", false, "启用延迟测试")
+		forceUpdate = flag.Bool("update", false, "强制从 RIPEstat 更新前缀表数据") // 新增这一行
 	)
 
 	fmt.Printf("IP Batch Track %s (commit: %s)\n", version, commit)
 	flag.Parse()
 
-	if _, err := os.Stat(config.DBV4Path); os.IsNotExist(err) {
+	// 修改前缀表检测逻辑：支持 -update 强制更新，或文件不存在时自动更新
+	if *forceUpdate {
+		fmt.Println("[+] 强制更新模式：正在从 RIPEstat 拉取最新前缀表...")
+		if err := filter.UpdatePrefixDB(); err != nil {
+			fmt.Printf("[-] 前缀表更新失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("[+] 前缀表更新完成")
+	} else if _, err := os.Stat(config.DBV4Path); os.IsNotExist(err) {
 		fmt.Println("[+] 未找到本地前缀表，正在从 RIPEstat 拉取更新...")
 		if err := filter.UpdatePrefixDB(); err != nil {
 			fmt.Printf("[-] 前缀表更新失败: %v\n", err)
@@ -162,5 +171,5 @@ func saveResults(results []worker.Result) {
 	outputStr := strings.Join(lines, "\n") + "\n"
 	f.WriteString(outputStr)
 	fmt.Print(outputStr)
-	fmt.Printf("\n[+] 结果已保存至: %s\n", filename)
+	fmt.Printf("\n[+] 已保存结果至: %s\n", filename)
 }
