@@ -172,7 +172,7 @@ func main() {
 		}
 	}
 
-	concInputWrap := container.New(&compactBoxLayout{width: 69, height: 26}, concEntry)
+	concInputWrap := container.New(&compactBoxLayout{width: 66, height: 23}, concEntry)
 
 	incBtn := widget.NewButton("▲", func() {
 		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
