@@ -9,10 +9,10 @@ type RouteRule struct {
 }
 
 var (
-	// TargetASNs 與 nexttraceV5.py 保持一致
+	// TargetASNs 
 	TargetASNs = []string{"AS4809", "AS4812", "AS9929", "AS58807", "AS58453", "AS4134"}
 
-	// RouteRules 基礎線路判定規則（對齊 nexttraceV5.py）
+	// RouteRules 
 	RouteRules = []RouteRule{
 		{ISP: "中国电信", LineType: "CN2 GIA/GT", ASNs: []string{"AS4809"}},
 		{ISP: "中国电信", LineType: "CN2", ASNs: []string{"AS4812"}},
@@ -26,7 +26,7 @@ var (
 	DBV4Path    = "asn_prefixes_v4.json"
 	DBV6Path    = "asn_prefixes_v6.json"
 
-	// HardcodedPrefixes 已知關鍵網段硬編碼補充表（對齊 KNOWN_IP_RANGES）
+	// HardcodedPrefixes 
 	HardcodedPrefixes = map[string][]string{
 		"AS4809":  {"59.43.0.0/16"},   // 电信 CN2 骨干
 		"AS4134":  {"202.97.0.0/16"},  // 电信 163 骨干
