@@ -1,5 +1,5 @@
 # ===== Go 编译产物 =====
-# 忽略当前项目生成的可执行文件（Mac/Linux无后缀，Windows有.exe）
+# 忽略当前项目生成的可执行文件
 ip-batch-track
 ip-batch-track-*
 *.exe
@@ -9,9 +9,11 @@ dist/
 coverage.out
 *.prof
 vendor/
+go.work
+go.work.sum
 
 # ===== 运行时生成的文件 =====
-# 运行代码时自动从 RIPEstat 拉取的前缀表（数据每天都在变，不需要提交）
+# 运行代码时自动从 RIPEstat 拉取的前缀表
 asn_prefixes_v4.json
 asn_prefixes_v6.json
 
@@ -23,7 +25,7 @@ result_*.txt
 .DS_Store
 # Windows 系统文件
 Thumbs.db
-# IDE 配置文件（如果你用 VSCode 或 Goland 可以加上）
+# IDE 配置文件
 .idea/
 .vscode/
 
