@@ -3,6 +3,7 @@ package filter
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -12,6 +13,13 @@ import (
 	"time"
 
 	"ip-batch-track/internal/config"
+)
+
+var (
+	httpClient = &http.Client{
+		Timeout: 15 * time.Second,
+	}
+	targetPattern = regexp.MustCompile(`^([a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?$`)
 )
 
 // ---------- RIPEstat 前缀拉取 ----------
@@ -26,11 +34,15 @@ type ripeStatResp struct {
 
 func fetchPrefixes(asn, starttime string, ipVersion int) ([]string, error) {
 	url := fmt.Sprintf("%s?resource=%s&starttime=%s", config.RIPEstatURL, asn, starttime)
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RIPEstat 返回异常状态码: %d", resp.StatusCode)
+	}
 
 	var data ripeStatResp
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -39,12 +51,13 @@ func fetchPrefixes(asn, starttime string, ipVersion int) ([]string, error) {
 
 	var cidrs []string
 	for _, item := range data.Data.Prefixes {
-		ip, _, err := netip.ParsePrefix(item.Prefix)
+		prefix, err := netip.ParsePrefix(item.Prefix)
 		if err != nil {
 			continue
 		}
-		if (ipVersion == 4 && ip.Is4()) || (ipVersion == 6 && ip.Is6()) {
-			cidrs = append(cidrs, item.Prefix)
+		prefix = prefix.Masked()
+		if (ipVersion == 4 && prefix.Addr().Is4()) || (ipVersion == 6 && prefix.Addr().Is6()) {
+			cidrs = append(cidrs, prefix.String())
 		}
 	}
 	return cidrs, nil
@@ -59,28 +72,49 @@ func UpdatePrefixDB() error {
 
 	for _, asn := range config.TargetASNs {
 		// IPv4
-		cidrs, err := fetchPrefixes(asn, today, 4)
-		if err != nil || len(cidrs) == 0 {
-			cidrs, _ = fetchPrefixes(asn, yesterday, 4)
+		cidrsV4, err := fetchPrefixes(asn, today, 4)
+		if err != nil || len(cidrsV4) == 0 {
+			fallbackV4, fbErr := fetchPrefixes(asn, yesterday, 4)
+			if fbErr == nil && len(fallbackV4) > 0 {
+				cidrsV4 = fallbackV4
+			} else if err != nil {
+				return fmt.Errorf("拉取 %s IPv4 前缀失败: %w", asn, err)
+			}
 		}
-		resultV4[asn] = cidrs
+		resultV4[asn] = cidrsV4
 
 		// IPv6
-		cidrs, err = fetchPrefixes(asn, today, 6)
-		if err != nil || len(cidrs) == 0 {
-			cidrs, _ = fetchPrefixes(asn, yesterday, 6)
+		cidrsV6, err := fetchPrefixes(asn, today, 6)
+		if err != nil || len(cidrsV6) == 0 {
+			fallbackV6, fbErr := fetchPrefixes(asn, yesterday, 6)
+			if fbErr == nil && len(fallbackV6) > 0 {
+				cidrsV6 = fallbackV6
+			} else if err != nil {
+				return fmt.Errorf("拉取 %s IPv6 前缀失败: %w", asn, err)
+			}
 		}
-		resultV6[asn] = cidrs
+		resultV6[asn] = cidrsV6
 	}
 
-	v4data, _ := json.MarshalIndent(resultV4, "", "  ")
-	v6data, _ := json.MarshalIndent(resultV6, "", "  ")
-	os.WriteFile(config.DBV4Path, v4data, 0644)
-	os.WriteFile(config.DBV6Path, v6data, 0644)
+	v4data, err := json.MarshalIndent(resultV4, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化 IPv4 前缀表失败: %w", err)
+	}
+	v6data, err := json.MarshalIndent(resultV6, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化 IPv6 前缀表失败: %w", err)
+	}
+
+	if err := os.WriteFile(config.DBV4Path, v4data, 0644); err != nil {
+		return fmt.Errorf("写入 %s 失败: %w", config.DBV4Path, err)
+	}
+	if err := os.WriteFile(config.DBV6Path, v6data, 0644); err != nil {
+		return fmt.Errorf("写入 %s 失败: %w", config.DBV6Path, err)
+	}
 	return nil
 }
 
-// ---------- ASN 匹配器（最长前缀匹配 + 硬编码拦截） ----------
+// ---------- ASN 匹配器（最长前缀匹配 + 硬编码兜底） ----------
 
 type prefixEntry struct {
 	prefix netip.Prefix
@@ -142,22 +176,11 @@ func (m *ASNMatcher) Match(addr netip.Addr) string {
 	if !addr.IsValid() {
 		return ""
 	}
-	
-	ipStr := addr.String()
 
-	// 硬编码优先：确保关键网段即使 API 数据滞后也能精准识别
-	if strings.HasPrefix(ipStr, "59.43.") {
-		return "AS4809" // 电信 CN2 核心
-	}
-	if strings.HasPrefix(ipStr, "202.97.") {
-		return "AS4134" // 电信 163 骨干（用于判 GT）
-	}
-	if strings.HasPrefix(ipStr, "69.194.") {
-		return "AS23764" // 电信 CTGNet
-	}
-
-	// 最长前缀匹配 (LPM)
+	// 统一转换为标准地址（例如将 ::ffff:1.2.3.4 还原为 1.2.3.4）
 	addr = addr.Unmap()
+
+	// 最长前缀匹配 (LPM)：硬编码兜底网段已在 LoadMatcher 中合并，由前缀长度决定优先级
 	bestBits := -1
 	bestASN := ""
 	for _, e := range m.entries {
@@ -169,7 +192,7 @@ func (m *ASNMatcher) Match(addr netip.Addr) string {
 	return bestASN
 }
 
-// ---------- 线路分析（重点修复 GIA/GT 判定） ----------
+// ---------- 线路分析 ----------
 
 func AnalyzeRoute(hitASNs []string) (string, string, string) {
 	asnSet := make(map[string]bool)
@@ -184,20 +207,17 @@ func AnalyzeRoute(hitASNs []string) (string, string, string) {
 
 	// 1. 优先判断电信优化线路
 	if asnSet["AS4809"] {
-		// 如果同时包含 163 骨干 (AS4134)，说明是半程优化 GT
 		if asnSet["AS4134"] {
 			return "中国电信", "CN2 GT（半程优化）", asnStr
 		}
-		// 否则判定为全程优化 GIA
 		return "中国电信", "CN2 GIA（全程优化）", asnStr
 	}
-	
-	// 备选：CTGNet 或 CN2（AS4812）
+
 	if asnSet["AS23764"] {
 		return "中国电信", "CTGNet（国际精品）", asnStr
 	}
 
-	// 2. 遍历基础规则判断联通 / 移动
+	// 2. 遍历基础规则判断联通 / 移动 / 其他电信规则
 	var isps, types []string
 	seenISP, seenType := map[string]bool{}, map[string]bool{}
 
@@ -236,20 +256,27 @@ func ParseTargetLine(line string) (ip, port, country string) {
 		country = strings.TrimSpace(line[idx+1:])
 		line = strings.TrimSpace(line[:idx])
 	}
+	if line == "" {
+		return "", "", country
+	}
 
-	re := regexp.MustCompile(`[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
-	match := re.FindString(line)
-	if match != "" {
-		ip = match
-		rest := strings.Replace(line, ip, "", 1)
-		if strings.HasPrefix(rest, ":") {
-			p := strings.TrimSpace(rest[1:])
-			if _, err := strconv.Atoi(p); err == nil {
-				port = p
+	// 优先尝试标准 host:port（兼容 [IPv6]:port、域名:port、IPv4:port）
+	if host, p, err := net.SplitHostPort(line); err == nil {
+		if portNum, pErr := strconv.Atoi(p); pErr == nil && portNum >= 1 && portNum <= 65535 {
+			return strings.Trim(host, "[]"), p, country
+		}
+	}
+
+	matches := targetPattern.FindStringSubmatch(line)
+	if len(matches) >= 2 {
+		host := strings.Trim(matches[1], "[]")
+		if len(matches) >= 4 && matches[3] != "" {
+			if portNum, err := strconv.Atoi(matches[3]); err == nil && portNum >= 1 && portNum <= 65535 {
+				port = matches[3]
 			}
 		}
-	} else {
-		ip = line
+		return host, port, country
 	}
-	return ip, port, country
+
+	return strings.Trim(line, "[]"), "", country
 }
