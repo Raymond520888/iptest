@@ -354,7 +354,7 @@ func main() {
 
 			cfg := config.Config{
 				Concurrency: conc,
-				Timeout:     30 * time.Second,
+				Timeout:     60 * time.Second,
 				MaxHops:     30,
 				EnablePing:  enablePing,
 			}
