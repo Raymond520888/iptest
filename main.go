@@ -25,7 +25,10 @@ import (
 	"ip-batch-track/internal/worker"
 )
 
-const bannerTopRight = "Make by Raymond"
+const (
+	bannerTopRight = "Make by Raymond"
+	maxConcurrency = 128
+)
 
 var (
 	version = "V3.0"
@@ -72,27 +75,56 @@ func (t *customTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t *customTheme) Size(name fyne.ThemeSizeName) float32 {
+	if name == theme.SizeNamePadding {
+		return 2
+	}
 	return theme.DefaultTheme().Size(name)
 }
 
-// fixedWidthLayout 让输入框宽度贴合数字内容，避免多余空白
-type fixedWidthLayout struct {
-	width float32
+// compactBoxLayout 让控件按指定宽高紧凑排布，不会被 HBox 撑高或撑宽
+type compactBoxLayout struct {
+	width  float32
+	height float32
 }
 
-func (l *fixedWidthLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) == 0 {
-		return fyne.NewSize(l.width, 0)
+func (l *compactBoxLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(l.width, l.height)
+}
+
+func (l *compactBoxLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	w := l.width
+	h := l.height
+	if w <= 0 {
+		w = size.Width
 	}
-	min := objects[0].MinSize()
-	return fyne.NewSize(l.width, min.Height)
-}
-
-func (l *fixedWidthLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if h <= 0 {
+		h = size.Height
+	}
 	for _, o := range objects {
-		o.Resize(fyne.NewSize(l.width, size.Height))
+		o.Resize(fyne.NewSize(w, h))
 		o.Move(fyne.NewPos(0, 0))
 	}
+}
+
+// spinnerLayout 将上下两个小按钮紧凑叠放在同一列
+type spinnerLayout struct {
+	width  float32
+	height float32
+}
+
+func (l *spinnerLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(l.width, l.height)
+}
+
+func (l *spinnerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
+		return
+	}
+	halfH := size.Height / 2
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[0].Resize(fyne.NewSize(size.Width, halfH))
+	objects[1].Move(fyne.NewPos(0, halfH))
+	objects[1].Resize(fyne.NewSize(size.Width, size.Height-halfH))
 }
 
 func main() {
@@ -115,34 +147,68 @@ func main() {
 	targetEntry := widget.NewMultiLineEntry()
 	targetEntry.SetPlaceHolder("例如：\n1.1.1.1:443#US\nexample.com:8443#JP\n8.8.8.8")
 
-	// 2. 控制栏组件
+	// 2. 控制栏组件（紧凑数字框 + 限制最大 128）
 	concEntry := widget.NewEntry()
 	concEntry.SetText("128")
 	concEntry.Validator = func(s string) error {
 		v, err := strconv.Atoi(strings.TrimSpace(s))
-		if err != nil || v <= 0 {
-			return fmt.Errorf("需为正整数")
+		if err != nil || v <= 0 || v > maxConcurrency {
+			return fmt.Errorf("需为 1-%d 正整数", maxConcurrency)
 		}
 		return nil
 	}
-	concInputWrap := container.New(&fixedWidthLayout{width: 64}, concEntry)
+
+	var adjustingConc bool
+	concEntry.OnChanged = func(s string) {
+		if adjustingConc {
+			return
+		}
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			return
+		}
+		v, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return
+		}
+		if v > maxConcurrency {
+			adjustingConc = true
+			concEntry.SetText(strconv.Itoa(maxConcurrency))
+			adjustingConc = false
+		}
+	}
+
+	concInputWrap := container.New(&compactBoxLayout{width: 44, height: 28}, concEntry)
 
 	incBtn := widget.NewButton("▲", func() {
 		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
 		if v <= 0 {
-			v = 128
+			v = 16
+		} else {
+			v += 16
 		}
-		concEntry.SetText(strconv.Itoa(v + 16))
+		if v > maxConcurrency {
+			v = maxConcurrency
+		}
+		adjustingConc = true
+		concEntry.SetText(strconv.Itoa(v))
+		adjustingConc = false
 	})
 	decBtn := widget.NewButton("▼", func() {
 		v, _ := strconv.Atoi(strings.TrimSpace(concEntry.Text))
-		if v > 16 {
-			concEntry.SetText(strconv.Itoa(v - 16))
-		} else {
-			concEntry.SetText("1")
+		if v > maxConcurrency {
+			v = maxConcurrency
 		}
+		if v > 16 {
+			v -= 16
+		} else {
+			v = 1
+		}
+		adjustingConc = true
+		concEntry.SetText(strconv.Itoa(v))
+		adjustingConc = false
 	})
-	spinnerBox := container.NewVBox(incBtn, decBtn)
+	spinnerBox := container.New(&spinnerLayout{width: 20, height: 28}, incBtn, decBtn)
 	concBox := container.NewHBox(widget.NewLabel("并发:"), concInputWrap, spinnerBox)
 
 	enablePingCheck := widget.NewCheck("启用延迟测试", nil)
@@ -281,8 +347,8 @@ func main() {
 			return
 		}
 		conc, err := strconv.Atoi(strings.TrimSpace(concEntry.Text))
-		if err != nil || conc <= 0 {
-			dialog.ShowError(fmt.Errorf("并发数必须是大于 0 的整数"), w)
+		if err != nil || conc <= 0 || conc > maxConcurrency {
+			dialog.ShowError(fmt.Errorf("并发数必须是 1 到 %d 之间的整数", maxConcurrency), w)
 			return
 		}
 
